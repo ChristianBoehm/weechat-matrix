@@ -20,10 +20,15 @@ supports large parts of the Matrix protocol, including end-to-end encryption
 unimplemented).
 
 However, due to some inherent limitations of Weechat *scripts*, development has
-moved to [weechat-matrix-rs](https://github.com/poljar/weechat-matrix-rs),
-a Weechat *plugin* written in Rust. As such, weechat-matrix is in maintenance
+moved to [weechat-matrix-rs](https://github.com/poljar/weechat-matrix-rs), a
+Weechat *plugin* written in Rust. As such, weechat-matrix is in maintenance
 mode and will likely not be receiving substantial new features. PRs are still
 accepted and welcome.
+
+Since the upstream repository has been inactive since mid-2023, the
+[ChristianBoehm fork](https://github.com/ChristianBoehm/weechat-matrix) is the
+maintained copy: it carries the v0.3.1 fixes (persistent SSO sessions,
+optional `python-future`, portable helper shebangs).
 
 # Installation
 
@@ -59,6 +64,11 @@ available to weechat.
     cd weechat-matrix
     pip install --user -r requirements.txt
     ```
+
+    The `python-future` package listed in `requirements.txt` is only required
+    for very old Python versions; on Python 3 the script falls back to native
+    standard-library equivalents, so it also works where `future` is not
+    installed (e.g. the Alpine Linux package).
 
 3. As your regular user, just run: `make install` in this repository directory.
 
@@ -222,7 +232,16 @@ empty.
 After connecting a URL will be presented which needs to be used to perform the
 sign on. Please note that the helper script spawns a HTTP server which waits for
 the sign-on token to be passed back. This makes it necessary to do the sign on
-on the same host as Weechat.
+on the same host as Weechat. The helper also works on systems with a
+non-GNU userland (e.g. BusyBox on Alpine Linux).
+
+Since v0.3.1 the access token received at login is stored in the server's
+session directory (file `access_token`, mode 0600, next to the end-to-end
+encryption database). On the next start weechat-matrix restores the session
+from it, so **no new sign-on is needed after a restart**. The browser SSO flow
+only has to be repeated if the server revokes the token (token expiry, password
+change, device logout); in that case the stored token is removed
+automatically and the SSO flow is started again on the next (auto)connect.
 
 A hsignal is sent out when the SSO helper spawns as well, the name of the
 hsignal is `matrix_sso_login` and it will contain the name of the server in the
