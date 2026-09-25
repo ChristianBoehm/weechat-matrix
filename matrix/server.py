@@ -419,6 +419,23 @@ class MatrixServer(object):
             self.get_session_path(),
             config=config
         )
+
+        token_file = os.path.join(self.get_session_path(), "access_token")
+        try:
+            if os.path.isfile(token_file):
+                with open(token_file) as tf:
+                    tok = tf.read().strip()
+                if tok:
+                    self.access_token = tok
+                    self.client.access_token = tok
+                    suffix = "_%s.db" % self.device_id
+                    for dbf in os.listdir(self.get_session_path()):
+                        if dbf.endswith(suffix):
+                            self.client.user_id = dbf[: -len(suffix)]
+                            break
+                    self.client.load_store()
+        except Exception:
+            pass
         self.client.add_to_device_callback(
             self.key_verification_cb,
             KeyVerificationEvent
@@ -1343,6 +1360,14 @@ class MatrixServer(object):
         self.device_id = response.device_id
         self.save_device_id()
 
+        try:
+            token_file = os.path.join(self.get_session_path(), "access_token")
+            with open(token_file, "w") as tf:
+                tf.write(response.access_token)
+            os.chmod(token_file, 0o600)
+        except OSError:
+            pass
+
         message = "{prefix}matrix: Logged in as {user}".format(
             prefix=W.prefix("network"), user=self.user_id
         )
@@ -1578,6 +1603,12 @@ class MatrixServer(object):
         self.error("Error: {}".format(str(response)))
 
         if isinstance(response, (SyncError, LoginError)):
+            try:
+                token_file = os.path.join(self.get_session_path(), "access_token")
+                if os.path.isfile(token_file):
+                    os.unlink(token_file)
+            except OSError:
+                pass
             self.disconnect()
         elif isinstance(response, JoinedMembersError):
             self.rooms_with_missing_members.append(response.room_id)
