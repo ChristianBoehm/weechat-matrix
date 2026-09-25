@@ -30,6 +30,20 @@ Since the upstream repository has been inactive since mid-2023, the
 maintained copy: it carries the v0.3.1 fixes (persistent SSO sessions,
 optional `python-future`, portable helper shebangs).
 
+# Prerequisites
+
+weechat-matrix is a Weechat *script*, not a standalone chat client: it runs
+inside [Weechat](https://weechat.org/) and therefore requires a Weechat
+installation **with Python 3 support** as a hard prerequisite.
+
+Check your Weechat build with:
+
+    weechat --build-info
+
+and make sure it reports `ENABLE_PYTHON: ON`. The Python plugin must use the
+same Python interpreter you install the dependencies with; check the runtime
+version inside Weechat with `/python version`.
+
 # Installation
 
 ## Arch Linux
