@@ -1,4 +1,4 @@
-#!/usr/bin/env -S python3 -u
+#!/usr/bin/env python3
 # Copyright 2019 The Matrix.org Foundation CIC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +29,7 @@ shutdown_task = None
 
 
 def to_weechat(message):
-    print(json.dumps(message))
+    print(json.dumps(message), flush=True)
 
 
 async def get_token(request):
