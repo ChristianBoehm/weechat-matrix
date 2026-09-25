@@ -41,7 +41,11 @@ from typing import Any, AnyStr, Deque, Dict, List, Optional, Set, Text, Tuple
 import logbook
 import json
 import OpenSSL.crypto as crypto
-from future.utils import bytes_to_native_str as n
+try:
+    from future.utils import bytes_to_native_str as n
+except ImportError:
+    def n(b, encoding="utf-8"):
+        return b.decode(encoding) if isinstance(b, bytes) else b
 from logbook import Logger, StreamHandler
 
 try:

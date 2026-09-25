@@ -21,7 +21,10 @@ import os
 import re
 import shlex
 from builtins import str
-from future.moves.itertools import zip_longest
+try:
+    from future.moves.itertools import zip_longest
+except ImportError:
+    from itertools import zip_longest
 from collections import defaultdict
 from functools import partial
 from nio import EncryptionError, LocalProtocolError
