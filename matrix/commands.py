@@ -170,6 +170,9 @@ class WeechatCommandParser(object):
         import_parser.add_argument("file")
         import_parser.add_argument("passphrase")
 
+        cross_sign_parser = subparsers.add_parser("cross-sign")
+        cross_sign_parser.add_argument("recovery_key", nargs="+")
+
         sas_parser = subparsers.add_parser("verification")
         sas_parser.add_argument(
             "action",
@@ -437,6 +440,7 @@ def hook_commands():
          "unverify <user-id> <device-id> ||"
          "verify <user-id> <device-id> ||"
          "verification start|accept|cancel|confirm <user-id> <device-id> ||"
+         "cross-sign <recovery-key> ||"
          "ignore <user-id> <device-id> ||"
          "unignore <user-id> <device-id> ||"
          "export <file-name> <passphrase> ||"
@@ -451,6 +455,8 @@ def hook_commands():
          "     ignore: ignore an unverifiable but non-blacklist-worthy device\n"
          "   unignore: unignore a device\n"
          "verification: manage interactive device verification\n"
+         " cross-sign: sign this device with the cross-signing key, which is\n"
+         "             unlocked with the recovery key of the secret storage\n"
          "     export: export encryption keys\n"
          "     import: import encryption keys\n\n"
          "Examples:"
@@ -464,6 +470,7 @@ def hook_commands():
          'unverify %(olm_user_ids) %(olm_devices) ||'
          'verify %(olm_user_ids) %(olm_devices) ||'
          'verification start|accept|cancel|confirm %(olm_user_ids) %(olm_devices) ||'
+         'cross-sign ||'
          'ignore %(olm_user_ids) %(olm_devices) ||'
          'unignore %(olm_user_ids) %(olm_devices) ||'
          'export %(filename) ||'
@@ -916,6 +923,8 @@ def matrix_olm_command_cb(data, buffer, args):
             olm_unblacklist_command(server, parsed_args)
         elif parsed_args.subcommand == "verification":
             olm_sas_command(server, parsed_args)
+        elif parsed_args.subcommand == "cross-sign":
+            server.cross_sign(" ".join(parsed_args.recovery_key))
         elif parsed_args.subcommand == "ignore":
             olm_ignore_command(server, parsed_args)
         elif parsed_args.subcommand == "unignore":

@@ -22,6 +22,7 @@ import socket
 import ssl
 import time
 import copy
+import json
 from collections import defaultdict, deque
 from atomicwrites import atomic_write
 from typing import (
@@ -301,6 +302,7 @@ class MatrixServer(object):
         self.transport_type = None  # type: Optional[TransportType]
 
         self.sso_hook = None
+        self.cross_sign_hook = None
 
         # Enable http2 negotiation on the ssl context.
         self.ssl_context.set_alpn_protocols(["h2", "http/1.1"])
@@ -983,6 +985,35 @@ class MatrixServer(object):
             "sso_login_cb",
             self.name
         )
+
+    def cross_sign(self, recovery_key):
+        # type: (str) -> None
+        if self.cross_sign_hook:
+            self.error("Cross-signing is already in progress")
+            return
+
+        if not self.client or not self.client.logged_in or not self.client.olm:
+            self.error("Not logged in")
+            return
+
+        self.cross_sign_hook = W.hook_process_hashtable(
+            "matrix_cross_sign",
+            {"stdin": "1"},
+            60000,
+            "cross_sign_cb",
+            self.name
+        )
+
+        W.hook_set(self.cross_sign_hook, "stdin", json.dumps({
+            "homeserver": self.homeserver.geturl(),
+            "access_token": self.client.access_token,
+            "user_id": self.client.user_id,
+            "device_id": self.client.device_id,
+            "fingerprint": self.client.olm.account.identity_keys["ed25519"],
+            "recovery_key": recovery_key,
+        }))
+        W.hook_set(self.cross_sign_hook, "stdin_close", "")
+        self.info("Signing this device with the cross-signing key...")
 
     def login(self, token=None):
         # type: (...) -> None
@@ -1812,6 +1843,15 @@ class MatrixServer(object):
                 self.to_device_sent.remove(response.to_device_message)
             except ValueError:
                 pass
+
+            message = response.to_device_message
+            if message and message.type.startswith("m.key.verification."):
+                self.error("Sending {} to {} {} failed: {}".format(
+                    message.type,
+                    message.recipient,
+                    message.recipient_device,
+                    response.message
+                ))
 
     def handle_response(self, response):
         # type: (Response) -> None
