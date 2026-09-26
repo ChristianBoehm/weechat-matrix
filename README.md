@@ -14,6 +14,7 @@ protocol, with end-to-end encryption.
 
 | Version | Changes |
 |---|---|
+| 0.3.4 | `matrix.network.auto_ignore_new_devices`: encrypt for new devices of other users without asking, like Element (own devices still need a decision) |
 | 0.3.3 | `/olm backup restore`: unlock old encrypted messages from the server-side key backup |
 | 0.3.2 | `/olm cross-sign`: the device signs itself with the recovery key and shows as verified in Element · modern verification request flow · automatic re-upload of device keys the server lost |
 | 0.3.1 | SSO sessions survive restarts · `python-future` optional · helpers work on BusyBox/Alpine |
@@ -328,6 +329,20 @@ The backup key is unlocked with the recovery key (via
 downloaded, decrypted and imported, and messages already shown as
 undecryptable are decrypted again. Older history can then be fetched as
 usual. The restore is one-shot: new keys are not uploaded to the backup.
+
+## Unverified devices of other users
+
+By default weechat-matrix refuses to send into an encrypted room while any
+device in it is neither verified, ignored nor blacklisted ("Untrusted devices
+found in room"). `/olm ignore <user-id> *` marks all current devices of a user
+as ignored, which here means "encrypt for it without asking", not "hide the
+user". To get Element's behaviour for all current and future devices of
+other users:
+
+        /set matrix.network.auto_ignore_new_devices on
+
+Devices of your own account are never ignored automatically; verify or
+blacklist them with `/olm`.
 
 `/olm verification start|accept|cancel|confirm` uses the
 `m.key.verification.request` flow since v0.3.2, which current clients expect
