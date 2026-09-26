@@ -479,6 +479,9 @@ def cross_sign_cb(server_name, command, return_code, out, err):
             "This device is now signed with the self-signing key {}, "
             "other clients should show it as verified".format(
                 ret["self_signing_key"]))
+    elif ret.get("type") == "missing_device_keys":
+        server.error("Cross-signing failed: {}".format(ret.get("message")))
+        server.reupload_device_keys()
     else:
         server.error("Cross-signing failed: {}".format(ret.get("message")))
 

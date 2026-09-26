@@ -44,7 +44,11 @@ SELF_SIGNING_SECRET = "m.cross_signing.self_signing"
 
 
 class CrossSignError(Exception):
-    pass
+    type = "error"
+
+
+class MissingDeviceKeys(CrossSignError):
+    type = "missing_device_keys"
 
 
 def b64decode(data):
@@ -194,7 +198,7 @@ def cross_sign(args):
 
     device_keys = keys.get("device_keys", {}).get(user_id, {}).get(device_id)
     if not device_keys:
-        raise CrossSignError("The server doesn't know our device keys")
+        raise MissingDeviceKeys("The server doesn't know our device keys")
 
     # Only sign the device keys if they are the ones we hold locally,
     # otherwise we would vouch for keys the server made up.
@@ -225,7 +229,7 @@ def main():
         public_key = cross_sign(json.loads(sys.stdin.read()))
         result = {"type": "ok", "self_signing_key": public_key}
     except CrossSignError as e:
-        result = {"type": "error", "message": str(e)}
+        result = {"type": e.type, "message": str(e)}
     except (KeyError, ValueError, OSError) as e:
         result = {"type": "error",
                   "message": "{}: {}".format(type(e).__name__, e)}

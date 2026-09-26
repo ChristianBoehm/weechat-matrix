@@ -1372,6 +1372,15 @@ class MatrixServer(object):
         _, request = self.client.keys_upload()
         self.send_or_queue(request)
 
+    def reupload_device_keys(self):
+        # nio only uploads the device keys while the account isn't marked as
+        # shared. If the server lost them (e.g. the device got recreated on a
+        # re-login) nobody can encrypt for us or verify us, so share again.
+        self.client.olm.account.shared = False
+        self.info("The server lost the keys of this device, uploading "
+                  "them again. Run /olm cross-sign again afterwards.")
+        self.keys_upload()
+
     def keys_query(self):
         _, request = self.client.keys_query()
         self.keys_queried = True
@@ -1908,6 +1917,12 @@ class MatrixServer(object):
 
         elif isinstance(response, KeysQueryResponse):
             self.keys_queried = False
+
+            own_devices = response.device_keys.get(self.client.user_id)
+            if (own_devices is not None
+                    and self.client.device_id not in own_devices
+                    and self.client.olm.account.shared):
+                self.reupload_device_keys()
             W.bar_item_update("buffer_modes")
             W.bar_item_update("matrix_modes")
 
