@@ -81,7 +81,7 @@ from nio import (
     ToDeviceError,
     UnknownToDeviceEvent,
 )
-from nio.crypto import Sas
+from nio.crypto import Olm, Sas
 
 from . import globals as G
 from .buffer import OwnAction, OwnMessage, RoomBuffer
@@ -103,6 +103,15 @@ try:
 except NameError:
     FileNotFoundError = IOError
 
+
+# The parts of a room key event decrypt_printed_messages() looks at.
+ImportedRoomKey = NamedTuple(
+    "ImportedRoomKey",
+    [
+        ("room_id", str),
+        ("session_id", str),
+    ],
+)
 
 EncryptionQueueItem = NamedTuple(
     "EncryptionQueueItem",
@@ -302,7 +311,9 @@ class MatrixServer(object):
         self.transport_type = None  # type: Optional[TransportType]
 
         self.sso_hook = None
-        self.cross_sign_hook = None
+        self.recovery_hook = None
+        self.recovery_action = None
+        self.recovery_output = ""
 
         # Enable http2 negotiation on the ssl context.
         self.ssl_context.set_alpn_protocols(["h2", "http/1.1"])
@@ -986,25 +997,42 @@ class MatrixServer(object):
             self.name
         )
 
-    def cross_sign(self, recovery_key):
-        # type: (str) -> None
-        if self.cross_sign_hook:
-            self.error("Cross-signing is already in progress")
+    def run_recovery_helper(self, action, recovery_key):
+        # type: (str, str) -> None
+        """Run a matrix_cross_sign task that needs the recovery key.
+
+        Without a recovery key on the command line the secured data
+        matrix_recovery_key is used (/secure set matrix_recovery_key ...).
+        """
+        if self.recovery_hook:
+            self.error("A recovery key task is already in progress")
             return
 
         if not self.client or not self.client.logged_in or not self.client.olm:
             self.error("Not logged in")
             return
 
-        self.cross_sign_hook = W.hook_process_hashtable(
+        if not recovery_key:
+            recovery_key = W.string_eval_expression(
+                "${sec.data.matrix_recovery_key}", {}, {}, {})
+
+        if not recovery_key:
+            self.error("No recovery key given and the secured data "
+                       "matrix_recovery_key isn't set, see /help secure")
+            return
+
+        self.recovery_action = action
+        self.recovery_output = ""
+        self.recovery_hook = W.hook_process_hashtable(
             "matrix_cross_sign",
             {"stdin": "1"},
-            60000,
-            "cross_sign_cb",
+            300000,
+            "recovery_helper_cb",
             self.name
         )
 
-        W.hook_set(self.cross_sign_hook, "stdin", json.dumps({
+        W.hook_set(self.recovery_hook, "stdin", json.dumps({
+            "action": action,
             "homeserver": self.homeserver.geturl(),
             "access_token": self.client.access_token,
             "user_id": self.client.user_id,
@@ -1012,8 +1040,42 @@ class MatrixServer(object):
             "fingerprint": self.client.olm.account.identity_keys["ed25519"],
             "recovery_key": recovery_key,
         }))
-        W.hook_set(self.cross_sign_hook, "stdin_close", "")
-        self.info("Signing this device with the cross-signing key...")
+        W.hook_set(self.recovery_hook, "stdin_close", "")
+
+        if action == "cross_sign":
+            self.info("Signing this device with the cross-signing key...")
+        else:
+            self.info("Fetching the room keys from the key backup...")
+
+    def import_backup_sessions(self, sessions):
+        # type: (List[Dict[str, Any]]) -> int
+        olm = self.client.olm
+        imported = []
+
+        for session_dict in sessions:
+            if session_dict.get("algorithm") != Olm._megolm_algorithm:
+                continue
+
+            try:
+                session = Olm._import_group_session(
+                    session_dict["session_key"],
+                    session_dict["sender_claimed_keys"]["ed25519"],
+                    session_dict["sender_key"],
+                    session_dict["room_id"],
+                    session_dict.get("forwarding_curve25519_key_chain", []),
+                )
+            except KeyError:
+                continue
+
+            if session and olm.inbound_group_store.add(session):
+                olm.save_inbound_group_session(session)
+                imported.append(session)
+
+        for session in imported:
+            self.decrypt_printed_messages(
+                ImportedRoomKey(session.room_id, session.id))
+
+        return len(imported)
 
     def login(self, token=None):
         # type: (...) -> None

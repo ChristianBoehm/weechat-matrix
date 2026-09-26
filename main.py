@@ -451,16 +451,23 @@ def sso_login_cb(server_name, command, return_code, out, err):
 
 
 @utf8_decode
-def cross_sign_cb(server_name, command, return_code, out, err):
+def recovery_helper_cb(server_name, command, return_code, out, err):
     server = SERVERS.get(server_name)
 
     if not server:
         return W.WEECHAT_RC_OK
 
+    # Big outputs (the backup restore) arrive in several chunks.
+    server.recovery_output += out
+
     if return_code == W.WEECHAT_HOOK_PROCESS_RUNNING:
         return W.WEECHAT_RC_OK
 
-    server.cross_sign_hook = None
+    action = server.recovery_action
+    out = server.recovery_output
+    server.recovery_hook = None
+    server.recovery_action = None
+    server.recovery_output = ""
 
     if return_code == W.WEECHAT_HOOK_PROCESS_ERROR:
         server.error("Error while running matrix_cross_sign. Please make "
@@ -471,19 +478,34 @@ def cross_sign_cb(server_name, command, return_code, out, err):
     try:
         ret = json.loads(out)
     except JSONDecodeError:
-        server.error("Cross-signing failed: {}".format(err or out))
+        server.error("matrix_cross_sign failed: {}".format(
+            err or "no output (timeout?)"))
         return W.WEECHAT_RC_OK
 
-    if ret.get("type") == "ok":
+    if ret.get("type") == "missing_device_keys":
+        server.error("Cross-signing failed: {}".format(ret.get("message")))
+        server.reupload_device_keys()
+
+    elif ret.get("type") != "ok":
+        server.error("{} failed: {}".format(
+            "Cross-signing" if action == "cross_sign" else "Backup restore",
+            ret.get("message")))
+
+    elif action == "cross_sign":
         server.info_highlight(
             "This device is now signed with the self-signing key {}, "
             "other clients should show it as verified".format(
                 ret["self_signing_key"]))
-    elif ret.get("type") == "missing_device_keys":
-        server.error("Cross-signing failed: {}".format(ret.get("message")))
-        server.reupload_device_keys()
+
     else:
-        server.error("Cross-signing failed: {}".format(ret.get("message")))
+        sessions = ret["sessions"]
+        imported = server.import_backup_sessions(sessions)
+        message = ("Imported {} new room keys from key backup version {} "
+                   "({} already known)".format(
+                       imported, ret["version"], len(sessions) - imported))
+        if ret["failed"]:
+            message += ", {} couldn't be decrypted".format(ret["failed"])
+        server.info_highlight(message)
 
     return W.WEECHAT_RC_OK
 

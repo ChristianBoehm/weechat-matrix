@@ -171,7 +171,11 @@ class WeechatCommandParser(object):
         import_parser.add_argument("passphrase")
 
         cross_sign_parser = subparsers.add_parser("cross-sign")
-        cross_sign_parser.add_argument("recovery_key", nargs="+")
+        cross_sign_parser.add_argument("recovery_key", nargs="*")
+
+        backup_parser = subparsers.add_parser("backup")
+        backup_parser.add_argument("action", choices=["restore"])
+        backup_parser.add_argument("recovery_key", nargs="*")
 
         sas_parser = subparsers.add_parser("verification")
         sas_parser.add_argument(
@@ -440,7 +444,8 @@ def hook_commands():
          "unverify <user-id> <device-id> ||"
          "verify <user-id> <device-id> ||"
          "verification start|accept|cancel|confirm <user-id> <device-id> ||"
-         "cross-sign <recovery-key> ||"
+         "cross-sign [<recovery-key>] ||"
+         "backup restore [<recovery-key>] ||"
          "ignore <user-id> <device-id> ||"
          "unignore <user-id> <device-id> ||"
          "export <file-name> <passphrase> ||"
@@ -457,6 +462,11 @@ def hook_commands():
          "verification: manage interactive device verification\n"
          " cross-sign: sign this device with the cross-signing key, which is\n"
          "             unlocked with the recovery key of the secret storage\n"
+         "     backup: restore: import the room keys of the server side key\n"
+         "             backup, unlocked with the recovery key\n"
+         "             (without <recovery-key> the secured data\n"
+         "             matrix_recovery_key is used: /secure set\n"
+         "             matrix_recovery_key <recovery-key>)\n"
          "     export: export encryption keys\n"
          "     import: import encryption keys\n\n"
          "Examples:"
@@ -471,6 +481,7 @@ def hook_commands():
          'verify %(olm_user_ids) %(olm_devices) ||'
          'verification start|accept|cancel|confirm %(olm_user_ids) %(olm_devices) ||'
          'cross-sign ||'
+         'backup restore ||'
          'ignore %(olm_user_ids) %(olm_devices) ||'
          'unignore %(olm_user_ids) %(olm_devices) ||'
          'export %(filename) ||'
@@ -924,7 +935,11 @@ def matrix_olm_command_cb(data, buffer, args):
         elif parsed_args.subcommand == "verification":
             olm_sas_command(server, parsed_args)
         elif parsed_args.subcommand == "cross-sign":
-            server.cross_sign(" ".join(parsed_args.recovery_key))
+            server.run_recovery_helper(
+                "cross_sign", " ".join(parsed_args.recovery_key))
+        elif parsed_args.subcommand == "backup":
+            server.run_recovery_helper(
+                "backup_restore", " ".join(parsed_args.recovery_key))
         elif parsed_args.subcommand == "ignore":
             olm_ignore_command(server, parsed_args)
         elif parsed_args.subcommand == "unignore":
