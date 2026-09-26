@@ -31,7 +31,7 @@ Since the upstream repository has been inactive since mid-2023, the
 maintained copy: it carries the v0.3.1 fixes (persistent SSO sessions,
 optional `python-future`, portable helper shebangs) and the v0.3.2 additions
 (self cross-signing with the recovery key, the verification request flow,
-re-upload of lost device keys).
+re-upload of lost device keys) and v0.3.3 (key backup restore).
 
 # Prerequisites
 
@@ -294,6 +294,13 @@ it "Recovery" or "Secure Backup"):
 
         /olm cross-sign <recovery key>
 
+Instead of typing the recovery key, it can be stored in WeeChat's secured
+data once and the key argument left out (this also applies to
+`/olm backup restore`):
+
+        /secure set matrix_recovery_key <recovery key>
+        /olm cross-sign
+
 The command has to be run in a matrix buffer. It needs the helper script
 [contrib/matrix_cross_sign](contrib/matrix_cross_sign.py) installed under your
 `PATH` as `matrix_cross_sign` (without the `.py` suffix); it only needs the
@@ -306,6 +313,20 @@ key and the access token are passed to it on stdin and are not stored.
 If the server lost the keys of this device (seen after a device got
 recreated on a re-login) they are uploaded again automatically, after that
 the command can be repeated.
+
+## Key backup
+
+Messages that were encrypted before this device existed (or while no keys
+were shared with it) can be unlocked with the room keys from the server side
+key backup that Element keeps:
+
+        /olm backup restore [<recovery key>]
+
+The backup key is unlocked with the recovery key (via
+`matrix_cross_sign`, same requirements as above), all backed up room keys are
+downloaded, decrypted and imported, and messages already shown as
+undecryptable are decrypted again. Older history can then be fetched as
+usual. The restore is one-shot: new keys are not uploaded to the backup.
 
 `/olm verification start|accept|cancel|confirm` uses the
 `m.key.verification.request` flow since v0.3.2, which current clients expect
