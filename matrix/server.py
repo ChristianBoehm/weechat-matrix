@@ -81,7 +81,7 @@ from nio import (
     ToDeviceError,
     UnknownToDeviceEvent,
 )
-from nio.crypto import Olm, Sas
+from nio.crypto import Olm, Sas, TrustState
 
 from . import globals as G
 from .buffer import OwnAction, OwnMessage, RoomBuffer
@@ -1307,6 +1307,7 @@ class MatrixServer(object):
         ignore_unverified_devices=False
     ):
 
+        self.auto_ignore_new_devices()
         self.ignore_while_sharing[room_id] = ignore_unverified_devices
 
         _, request = self.client.share_group_session(
@@ -1326,6 +1327,7 @@ class MatrixServer(object):
     ):
         # type: (...) -> UUID
         assert self.client
+        self.auto_ignore_new_devices()
 
         try:
             uuid, request = self.client.room_send(
@@ -1433,6 +1435,33 @@ class MatrixServer(object):
     def keys_upload(self):
         _, request = self.client.keys_upload()
         self.send_or_queue(request)
+
+    def auto_ignore_new_devices(self):
+        # type: () -> None
+        """Mark undecided devices of other users as ignored.
+
+        Only active if the network.auto_ignore_new_devices option is on.
+        """
+        if not G.CONFIG.network.auto_ignore_new_devices:
+            return
+
+        if not self.client or not self.client.olm:
+            return
+
+        ignored = defaultdict(list)  # type: Dict[str, List[str]]
+
+        for device in self.client.device_store:
+            if (device.user_id == self.client.user_id
+                    or device.deleted
+                    or device.trust_state != TrustState.unset):
+                continue
+
+            self.client.ignore_device(device)
+            ignored[device.user_id].append(device.id)
+
+        for user_id, device_ids in ignored.items():
+            self.info("Automatically ignoring new devices of {}: {}".format(
+                user_id, ", ".join(sorted(device_ids))))
 
     def reupload_device_keys(self):
         # nio only uploads the device keys while the account isn't marked as
@@ -1979,6 +2008,8 @@ class MatrixServer(object):
 
         elif isinstance(response, KeysQueryResponse):
             self.keys_queried = False
+
+            self.auto_ignore_new_devices()
 
             own_devices = response.device_keys.get(self.client.user_id)
             if (own_devices is not None

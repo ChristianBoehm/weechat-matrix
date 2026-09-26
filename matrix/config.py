@@ -180,6 +180,13 @@ def config_log_category_cb(data, option):
 
 
 @utf8_decode
+def config_auto_ignore_cb(data, option):
+    """Callback for the network.auto_ignore_new_devices option."""
+    if G.CONFIG.network.auto_ignore_new_devices:
+        for server in SERVERS.values():
+            server.auto_ignore_new_devices()
+
+
 def config_pgup_cb(data, option):
     """Callback for the network.fetch_backlog_on_pgup option.
     Enables or disables the hook that is run when /window page_up is called"""
@@ -775,6 +782,21 @@ class MatrixConfig(WeechatConfig):
                  "will again fail and devices need to be marked as verified "
                  "one by one or the /send-anyways command needs to be used to "
                  "ignore them."),
+            ),
+            Option(
+                "auto_ignore_new_devices",
+                "boolean",
+                "",
+                0,
+                0,
+                "off",
+                ("If on, devices of other users that are neither verified, "
+                 "ignored nor blacklisted are marked as ignored as soon as "
+                 "they are seen, so messages are encrypted for them without "
+                 "asking (like Element does by default). New devices of our "
+                 "own user are never ignored automatically."),
+                None,
+                config_auto_ignore_cb,
             ),
         ]
 
