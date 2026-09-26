@@ -1,37 +1,34 @@
-[![Build Status](https://img.shields.io/travis/poljar/weechat-matrix.svg?style=flat-square)](https://travis-ci.org/poljar/weechat-matrix)
-[![#weechat-matrix](https://img.shields.io/badge/matrix-%23weechat--matrix:termina.org.uk-blue.svg?style=flat-square)](https://matrix.to/#/!twcBhHVdZlQWuuxBhN:termina.org.uk?via=termina.org.uk&via=matrix.org)
-[![license](https://img.shields.io/badge/license-ISC-blue.svg?style=flat-square)](https://github.com/poljar/weechat-matrix/blob/master/LICENSE)
+[![license](https://img.shields.io/badge/license-ISC-blue.svg?style=flat-square)](LICENSE)
 
-# What is Weechat-Matrix?
+# weechat-matrix
 
-[Weechat](https://weechat.org/) is an extensible chat client.
+A [Weechat](https://weechat.org/) script for the [Matrix](https://matrix.org/)
+protocol, with end-to-end encryption.
 
-[Matrix](https://matrix.org/blog/home) is an open network for secure,
-decentralized communication.
+> **Maintained fork** of [poljar/weechat-matrix](https://github.com/poljar/weechat-matrix)
+> by Damir Jelić, which has had no commits since July 2023. This fork keeps the
+> script working with current homeservers and Element, and is a drop-in
+> replacement for the upstream version.
 
-[weechat-matrix](https://github.com/poljar/weechat-matrix/) is a Python script
-for Weechat that lets Weechat communicate over the Matrix protocol.
+## What's new in this fork
 
-# Project Status
+| Version | Changes |
+|---|---|
+| 0.3.3 | `/olm backup restore`: unlock old encrypted messages from the server-side key backup |
+| 0.3.2 | `/olm cross-sign`: the device signs itself with the recovery key and shows as verified in Element · modern verification request flow · automatic re-upload of device keys the server lost |
+| 0.3.1 | SSO sessions survive restarts · `python-future` optional · helpers work on BusyBox/Alpine |
 
-weechat-matrix is stable and quite usable as a daily driver. It already
-supports large parts of the Matrix protocol, including end-to-end encryption
-(though some features like full cross-signing and session unwedging are
-unimplemented; since v0.3.2 the device can sign itself with the recovery key,
-see [Cross-signing](#cross-signing)).
+## Project status
 
-However, due to some inherent limitations of Weechat *scripts*, development has
-moved to [weechat-matrix-rs](https://github.com/poljar/weechat-matrix-rs), a
-Weechat *plugin* written in Rust. As such, weechat-matrix is in maintenance
-mode and will likely not be receiving substantial new features. PRs are still
-accepted and welcome.
+Stable and usable as a daily driver. The fork is in maintenance mode: fixes
+and focused features that keep it working with current Matrix clients. Not
+implemented: verifying *other* users via cross-signing, uploading to the key
+backup, and session unwedging.
 
-Since the upstream repository has been inactive since mid-2023, the
-[ChristianBoehm fork](https://github.com/ChristianBoehm/weechat-matrix) is the
-maintained copy: it carries the v0.3.1 fixes (persistent SSO sessions,
-optional `python-future`, portable helper shebangs) and the v0.3.2 additions
-(self cross-signing with the recovery key, the verification request flow,
-re-upload of lost device keys) and v0.3.3 (key backup restore).
+The upstream author's Rust rewrite,
+[weechat-matrix-rs](https://github.com/poljar/weechat-matrix-rs), is under
+active development but, by its own description, still a work in progress
+without releases.
 
 # Prerequisites
 
@@ -48,6 +45,10 @@ same Python interpreter you install the dependencies with; check the runtime
 version inside Weechat with `/python version`.
 
 # Installation
+
+The distribution packages below ship the 2023 upstream version, without the
+fixes of this fork; use [Other platforms](#other-platforms) to install the
+fork, then copy its files over the packaged ones or run it from git.
 
 ## Arch Linux
 
@@ -77,7 +78,7 @@ available to weechat.
 
 2. Clone the repo and install dependencies
     ```
-    git clone https://github.com/poljar/weechat-matrix.git
+    git clone https://github.com/ChristianBoehm/weechat-matrix.git
     cd weechat-matrix
     pip install --user -r requirements.txt
     ```
@@ -169,7 +170,7 @@ would have been copied using `make install`.
 ## Uploading files
 
 Uploads are done using a helper script, which is found under
-[contrib/matrix_upload](https://github.com/poljar/weechat-matrix/blob/master/contrib/matrix_upload.py).
+[contrib/matrix_upload](contrib/matrix_upload.py).
 We recommend you install this under your `PATH` as `matrix_upload` (without the `.py` suffix).
 Uploads can be done from Weechat with: `/upload <file>`.
 
@@ -179,7 +180,7 @@ Encrypted files are displayed as an `emxc://` URI which cannot be directly
 opened. They can be opened in two different ways:
 
 - **In the CLI** by running the
-[contrib/matrix_decrypt](https://github.com/poljar/weechat-matrix/blob/master/contrib/matrix_decrypt.py)
+[contrib/matrix_decrypt](contrib/matrix_decrypt.py)
 helper script.
 
 - **In the browser** by using
@@ -240,7 +241,7 @@ Configuration is completed primarily through the Weechat interface.  First start
 ## Single sign-on:
 
 Single sign-on is supported using a helper script, the script found under
-[contrib/matrix_sso_helper](https://github.com/poljar/weechat-matrix/blob/master/contrib/matrix_sso_helper.py)
+[contrib/matrix_sso_helper](contrib/matrix_sso_helper.py)
 should be installed under your `PATH` as `matrix_sso_helper` (without the `.py` suffix).
 
 For single sign-on to be the preferred leave the servers username and password
