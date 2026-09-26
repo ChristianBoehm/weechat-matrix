@@ -36,7 +36,7 @@ from typing import (
     Union,
 )
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from nio import (
     Api,
@@ -77,8 +77,10 @@ from nio import (
     KeyVerificationEvent,
     ToDeviceMessage,
     ToDeviceResponse,
-    ToDeviceError
+    ToDeviceError,
+    UnknownToDeviceEvent,
 )
+from nio.crypto import Sas
 
 from . import globals as G
 from .buffer import OwnAction, OwnMessage, RoomBuffer
@@ -338,6 +340,9 @@ class MatrixServer(object):
         self.ignore_while_sharing = defaultdict(bool)  # type: Dict[str, bool]
         self.to_device_sent = []  # type: List[ToDeviceMessage]
 
+        # Pending m.key.verification.request flows, keyed by transaction id.
+        self.verification_requests = {}  # type: Dict[str, Dict[str, Any]]
+
         # Try to load the device id, the device id is loaded every time the
         # user changes but some login flows don't use a user so try to load the
         # device for a main user.
@@ -440,9 +445,132 @@ class MatrixServer(object):
             self.key_verification_cb,
             KeyVerificationEvent
         )
+        self.client.add_to_device_callback(
+            self.verification_request_cb,
+            UnknownToDeviceEvent
+        )
+
+    def verification_request_cb(self, event):
+        # nio doesn't know the request/ready/done part of the verification
+        # framework, those events arrive as unknown to-device events.
+        content = event.source.get("content", {})
+        transaction_id = content.get("transaction_id")
+
+        if not transaction_id:
+            return
+
+        if event.type == "m.key.verification.request":
+            if "m.sas.v1" not in content.get("methods", []):
+                return
+
+            self.verification_requests[transaction_id] = {
+                "user_id": event.sender,
+                "device_id": content.get("from_device"),
+                "we_requested": False,
+                "ready": False,
+            }
+            self.info_highlight("{user} via {device} has requested a key "
+                                "verification.\n"
+                                "To accept use /olm verification "
+                                "accept {user} {device}".format(
+                                    user=event.sender,
+                                    device=content.get("from_device")
+                                ))
+
+        elif event.type == "m.key.verification.ready":
+            request = self.verification_requests.get(transaction_id)
+
+            if not request or not request["we_requested"]:
+                return
+
+            if "m.sas.v1" not in content.get("methods", []):
+                self.error("{} doesn't support emoji verification".format(
+                    request["device_id"]))
+                return
+
+            request["ready"] = True
+            self._send_sas_start(request, transaction_id)
+
+        elif event.type == "m.key.verification.done":
+            request = self.verification_requests.pop(transaction_id, None)
+
+            if request:
+                self.info("Key verification with {} {} is done".format(
+                    request["user_id"], request["device_id"]))
+
+    def _send_sas_start(self, request, transaction_id):
+        try:
+            device = self.client.device_store[request["user_id"]][
+                request["device_id"]]
+        except KeyError:
+            self.error("Device {} of user {} not found".format(
+                request["device_id"], request["user_id"]))
+            return
+
+        olm = self.client.olm
+        self._install_sas_start_tiebreak(olm)
+
+        sas = Sas(
+            self.client.user_id,
+            self.client.device_id,
+            olm.account.identity_keys["ed25519"],
+            device,
+            transaction_id,
+        )
+        olm.key_verifications[transaction_id] = sas
+        self.to_device(sas.start_verification())
+
+    def _install_sas_start_tiebreak(self, olm):
+        # If both sides send m.key.verification.start for the same request
+        # the spec says the start of the lexicographically smaller
+        # (user id, device id) wins. nio would cancel our own start instead
+        # and send a cancellation, killing the whole request.
+        if getattr(olm, "_weechat_tiebreak", False):
+            return
+
+        handle_key_verification = olm.handle_key_verification
+        own_id = (self.client.user_id, self.client.device_id)
+
+        def handler(event):
+            if isinstance(event, KeyVerificationStart):
+                sas = olm.key_verifications.get(event.transaction_id)
+
+                if sas and sas.we_started_it:
+                    if (event.sender, event.from_device) > own_id:
+                        return
+                    del olm.key_verifications[event.transaction_id]
+
+            handle_key_verification(event)
+
+        olm.handle_key_verification = handler
+        olm._weechat_tiebreak = True
+
+    def _send_verification_done(self, sas):
+        request = self.verification_requests.get(sas.transaction_id)
+
+        if not request or request.get("done_sent"):
+            return
+
+        request["done_sent"] = True
+        device = sas.other_olm_device
+        self.to_device(ToDeviceMessage(
+            "m.key.verification.done",
+            device.user_id,
+            device.id,
+            {"transaction_id": sas.transaction_id},
+        ))
 
     def key_verification_cb(self, event):
         if isinstance(event, KeyVerificationStart):
+            sas = self.client.key_verifications.get(event.transaction_id)
+
+            # The start belongs to a request we already agreed on, no need to
+            # ask the user a second time.
+            if event.transaction_id in self.verification_requests:
+                if sas and not sas.we_started_it and not sas.canceled:
+                    self.accept_sas(sas)
+                return
+
             self.info_highlight("{user} via {device} has started a key "
                                 "verification process.\n"
                                 "To accept use /olm verification "
@@ -520,6 +648,7 @@ class MatrixServer(object):
             device = sas.other_olm_device
 
             if sas.verified:
+                self._send_verification_done(sas)
                 self.info_highlight("Device {} of user {} successfully "
                                     "verified".format(
                                         device.id,
@@ -527,6 +656,7 @@ class MatrixServer(object):
                                     ))
 
         elif isinstance(event, KeyVerificationCancel):
+            self.verification_requests.pop(event.transaction_id, None)
             self.info_highlight("The interactive device verification with "
                                 "user {} got canceled: {}.".format(
                                     event.sender,
@@ -1487,10 +1617,63 @@ class MatrixServer(object):
             room_buffer.replace_undecrypted_line(event)
 
     def start_verification(self, device):
-        _, request = self.client.start_key_verification(device)
-        self.send(request)
-        self.info("Starting an interactive device verification with "
+        transaction_id = str(uuid4())
+        self.verification_requests[transaction_id] = {
+            "user_id": device.user_id,
+            "device_id": device.id,
+            "we_requested": True,
+            "ready": False,
+        }
+        self.to_device(ToDeviceMessage(
+            "m.key.verification.request",
+            device.user_id,
+            device.id,
+            {
+                "from_device": self.client.device_id,
+                "methods": ["m.sas.v1"],
+                "timestamp": int(time.time() * 1000),
+                "transaction_id": transaction_id,
+            },
+        ))
+        self.info("Requesting an interactive device verification with "
                   "{} {}".format(device.user_id, device.id))
+
+    def get_verification_request(self, user_id, device_id):
+        for transaction_id, request in self.verification_requests.items():
+            if (request["user_id"] == user_id
+                    and request["device_id"] == device_id):
+                return transaction_id, request
+
+        return None, None
+
+    def accept_verification_request(self, transaction_id, request):
+        request["ready"] = True
+        self.to_device(ToDeviceMessage(
+            "m.key.verification.ready",
+            request["user_id"],
+            request["device_id"],
+            {
+                "from_device": self.client.device_id,
+                "methods": ["m.sas.v1"],
+                "transaction_id": transaction_id,
+            },
+        ))
+        self.info("Accepted the verification request, waiting for "
+                  "{} {} to start it".format(request["user_id"],
+                                             request["device_id"]))
+
+    def cancel_verification_request(self, transaction_id, request):
+        del self.verification_requests[transaction_id]
+        self.to_device(ToDeviceMessage(
+            "m.key.verification.cancel",
+            request["user_id"],
+            request["device_id"],
+            {
+                "code": "m.user",
+                "reason": "Canceled by user",
+                "transaction_id": transaction_id,
+            },
+        ))
 
     def accept_sas(self, sas):
         _, request = self.client.accept_key_verification(sas.transaction_id)
@@ -1511,6 +1694,7 @@ class MatrixServer(object):
         device = sas.other_olm_device
 
         if sas.verified:
+            self._send_verification_done(sas)
             self.info("Device {} of user {} successfully verified".format(
                 device.id,
                 device.user_id

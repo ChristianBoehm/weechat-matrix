@@ -855,6 +855,18 @@ def olm_sas_command(server, args):
         server.start_verification(device)
     elif args.action in ["accept", "confirm", "cancel"]:
         sas = server.client.get_active_sas(args.user_id, args.device_id)
+        transaction_id, request = server.get_verification_request(
+            args.user_id,
+            args.device_id
+        )
+
+        if request and (not sas or sas.transaction_id != transaction_id):
+            if args.action == "accept" and not request["we_requested"]:
+                server.accept_verification_request(transaction_id, request)
+                return W.WEECHAT_RC_OK
+            if args.action == "cancel":
+                server.cancel_verification_request(transaction_id, request)
+                return W.WEECHAT_RC_OK
 
         if not sas:
             server.error("No active key verification found for "
