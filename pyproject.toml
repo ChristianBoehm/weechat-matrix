@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "matrix"
-version = "0.3.1"
+version = "0.3.2"
 license = "ISC"
 description = "Weechat protocol script for Matrix."
 authors = ["Damir Jelić <poljar@termina.org.uk>"]

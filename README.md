@@ -16,8 +16,9 @@ for Weechat that lets Weechat communicate over the Matrix protocol.
 
 weechat-matrix is stable and quite usable as a daily driver. It already
 supports large parts of the Matrix protocol, including end-to-end encryption
-(though some features like cross-signing and session unwedging are
-unimplemented).
+(though some features like full cross-signing and session unwedging are
+unimplemented; since v0.3.2 the device can sign itself with the recovery key,
+see [Cross-signing](#cross-signing)).
 
 However, due to some inherent limitations of Weechat *scripts*, development has
 moved to [weechat-matrix-rs](https://github.com/poljar/weechat-matrix-rs), a
@@ -28,7 +29,9 @@ accepted and welcome.
 Since the upstream repository has been inactive since mid-2023, the
 [ChristianBoehm fork](https://github.com/ChristianBoehm/weechat-matrix) is the
 maintained copy: it carries the v0.3.1 fixes (persistent SSO sessions,
-optional `python-future`, portable helper shebangs).
+optional `python-future`, portable helper shebangs) and the v0.3.2 additions
+(self cross-signing with the recovery key, the verification request flow,
+re-upload of lost device keys).
 
 # Prerequisites
 
@@ -280,6 +283,33 @@ forwarded using ssh to the remote host:
 This forwards the local port 8443 to the localhost:8443 address on example.org.
 Note that it is necessary to forward the port to the localhost address on the
 remote host because the helper only listens on localhost.
+
+## Cross-signing
+
+Current clients such as Element only trust a device that is signed with the
+account's cross-signing key, and they offer no way to verify another session
+from their side. weechat-matrix can't do full cross-signing, but it can sign
+its own device if the account uses server side secret storage (Element calls
+it "Recovery" or "Secure Backup"):
+
+        /olm cross-sign <recovery key>
+
+The command has to be run in a matrix buffer. It needs the helper script
+[contrib/matrix_cross_sign](contrib/matrix_cross_sign.py) installed under your
+`PATH` as `matrix_cross_sign` (without the `.py` suffix); it only needs the
+`cryptography` package, which is already a dependency of `pyOpenSSL`. The
+helper unlocks the self-signing key with the recovery key, checks it against
+the key published for the account, checks that the device keys stored on the
+server are the local ones, signs them and uploads the signature. The recovery
+key and the access token are passed to it on stdin and are not stored.
+
+If the server lost the keys of this device (seen after a device got
+recreated on a re-login) they are uploaded again automatically, after that
+the command can be repeated.
+
+`/olm verification start|accept|cancel|confirm` uses the
+`m.key.verification.request` flow since v0.3.2, which current clients expect
+for emoji (SAS) verification.
 
 ## Bar items
 
